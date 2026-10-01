@@ -1,0 +1,75 @@
+{
+  "name": "daymark",
+  "private": false,
+  "version": "0.6.1",
+  "productName": "Daymark",
+  "description": "本地优先的个人日程与项目工作台",
+  "author": "Daymark contributors",
+  "license": "MIT",
+  "main": "electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build && node server.js --production",
+    "build": "vite build",
+    "start": "node server.js --production",
+    "icons": "node scripts/generate-icon.mjs",
+    "desktop": "npm run build && electron .",
+    "package:win": "npm run icons && npm run build && electron-builder --win nsis portable",
+    "test:persistence": "node scripts/persistence.mjs",
+    "test:desktop": "node scripts/desktop-smoke.mjs",
+    "test:folders": "node scripts/project-folders-smoke.mjs",
+    "test": "npm run build && npm run test:persistence && npm run test:desktop && npm run test:folders"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.0",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "ical.js": "^2.2.1",
+    "lucide-react": "^0.468.0",
+    "playwright-core": "^1.63.0",
+    "png-to-ico": "^3.0.2",
+    "prettier": "^3.9.9",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sharp": "^0.35.5",
+    "vite": "^6.1.0"
+  },
+  "build": {
+    "appId": "app.daymark.desktop",
+    "productName": "Daymark",
+    "directories": {
+      "output": "release"
+    },
+    "electronDist": "release/electron-runtime",
+    "files": [
+      "dist/**",
+      "assets/**",
+      "electron/**",
+      "server.js",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "icon": "assets/daymark.ico",
+      "signAndEditExecutable": false,
+      "signExecutable": false,
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "toolsets": {
+      "nsis": "0.0.0",
+      "winCodeSign": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  }
+}

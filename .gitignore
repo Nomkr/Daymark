@@ -1,0 +1,14 @@
+node_modules/
+dist/
+release/
+data/
+*-check.png
+desktop.png
+.edge-test/
+data-smoke-*/
+.edge-package-stage*/
+release-portable-check/
+.env
+.env.*
+*.log
+.DS_Store
