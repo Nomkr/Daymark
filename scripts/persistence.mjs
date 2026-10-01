@@ -44,7 +44,118 @@ try {
   await page.getByRole("textbox", { name: "标题" }).fill("冒烟测试任务");
   await page.getByRole("button", { name: "保存任务" }).click();
   await page.reload({ waitUntil: "networkidle" });
-  await page.getByText("冒烟测试任务", { exact: true }).first().waitFor();
+  const initialData = await fetch(`http://127.0.0.1:${port}/api/data`).then((response) => response.json());
+  if (!initialData.tasks.some((task) => task.title === "冒烟测试任务"))
+    throw new Error("未排期任务未写入本地数据");
+
+  const creationDay = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const expectedDay = `${creationDay.slice(0, 8)}${creationDay.endsWith("-01") ? "02" : "01"}`;
+  await page.getByRole("button", { name: "新建任务" }).click();
+  await page.getByRole("textbox", { name: "标题" }).fill("预计日期验证任务");
+  await page.getByLabel("预计完成时间").fill(`${expectedDay}T18:00`);
+  await page.getByRole("button", { name: "保存任务" }).click();
+  await page.reload({ waitUntil: "networkidle" });
+  if (await page.locator(".day-cell .calendar-task").filter({ hasText: "冒烟测试任务" }).count())
+    throw new Error("未设预计完成时间的任务占用了日历日期");
+  if (await page.locator(".day-cell.today .calendar-task").filter({ hasText: "预计日期验证任务" }).count())
+    throw new Error("任务仍显示在创建当天");
+  const expectedCell = page.locator(`.day-cell[aria-label^="${expectedDay}"]`);
+  await expectedCell.locator(".calendar-task").filter({ hasText: "预计日期验证任务" }).waitFor();
+  await expectedCell.click();
+  await page.locator(".day-panel .task-row").filter({ hasText: "预计日期验证任务" }).waitFor();
+  await page.locator(".day-cell.today").click();
+  console.log("个人任务按预计完成日期显示，未排期任务不占日历");
+
+  await page.getByRole("button", { name: "添加日程" }).click();
+  await page.getByRole("textbox", { name: "标题" }).fill("颜色测试日程");
+  await page.getByLabel("开始时间").fill("18:00");
+  await page.getByRole("button", { name: "珊瑚色" }).click();
+  await page.getByRole("button", { name: "保存日程" }).click();
+  await page.reload({ waitUntil: "networkidle" });
+  let coloredEvent = page.locator(".day-cell.today .calendar-event").filter({
+    hasText: "颜色测试日程",
+  });
+  await coloredEvent.waitFor();
+  if (await coloredEvent.evaluate((node) => getComputedStyle(node).backgroundColor) !== "rgb(251, 234, 230)")
+    throw new Error("日程颜色在刷新后未显示于月历");
+  const colorRow = page.locator(".day-panel .event-row").filter({
+    hasText: "颜色测试日程",
+  });
+  if (await colorRow.evaluate((node) => getComputedStyle(node, "::before").backgroundColor) !== "rgb(196, 108, 96)")
+    throw new Error("日程颜色未显示于日期详情");
+  await colorRow.getByRole("button", { name: "编辑日程" }).click();
+  await page.getByRole("button", { name: "青色" }).click();
+  await page.getByRole("button", { name: "保存日程" }).click();
+  const colorData = await fetch(`http://127.0.0.1:${port}/api/data`).then((response) => response.json());
+  if (colorData.events.find((event) => event.title === "颜色测试日程")?.color !== "teal")
+    throw new Error("编辑后的日程颜色未保存");
+  console.log("手动日程颜色可选择、编辑并在刷新后显示");
+
+  for (const name of ["排序测试一", "排序测试二", "排序测试三"]) {
+    await page.getByRole("button", { name: "新建项目" }).click();
+    await page.getByRole("textbox", { name: "项目名称" }).fill(name);
+    await page.getByRole("button", { name: "保存项目" }).click();
+  }
+  await page.getByRole("button", { name: "上移 排序测试三" }).click();
+  await page.getByRole("button", { name: "上移 排序测试三" }).click();
+  await page.waitForFunction(async () => {
+    const response = await fetch("/api/data");
+    const saved = await response.json();
+    return saved.projects[0]?.name === "排序测试三";
+  });
+  await page.reload({ waitUntil: "networkidle" });
+  const projectOrder = await page.locator(".sidebar-project-list .project-link-name").allTextContents();
+  if (projectOrder.join(",") !== "排序测试三,排序测试一,排序测试二")
+    throw new Error(`项目排序在刷新后丢失: ${projectOrder.join(",")}`);
+  console.log("侧栏项目可上下移动，顺序已持久保存");
+
+  await page.locator(".project-list-row").filter({ hasText: "排序测试二" })
+    .locator(".project-link")
+    .dragTo(page.locator(".project-list-row").filter({ hasText: "排序测试三" }), {
+      targetPosition: { x: 25, y: 4 },
+    });
+  await page.waitForFunction(async () => {
+    const response = await fetch("/api/data");
+    const saved = await response.json();
+    return saved.projects[0]?.name === "排序测试二";
+  });
+  await page.reload({ waitUntil: "networkidle" });
+  const draggedOrder = await page.locator(".sidebar-project-list .project-link-name").allTextContents();
+  if (draggedOrder.join(",") !== "排序测试二,排序测试三,排序测试一")
+    throw new Error(`拖动项目后顺序错误: ${draggedOrder.join(",")}`);
+  console.log("侧栏项目可拖动排序，刷新后顺序保持一致");
+
+  await page.getByRole("button", { name: "项目", exact: true }).click();
+  await page.locator(".project-card").filter({ hasText: "排序测试三" })
+    .getByRole("button", { name: "编辑项目" }).click();
+  await page.getByLabel("项目状态").selectOption("done");
+  await page.getByRole("button", { name: "保存项目" }).click();
+  await page.locator(".project-card").filter({ hasText: "排序测试二" })
+    .getByRole("button", { name: "编辑项目" }).click();
+  await page.getByLabel("项目状态").selectOption("active");
+  await page.getByRole("button", { name: "保存项目" }).click();
+  const visibleProjects = await page.locator(".sidebar-project-list .project-link-name").allTextContents();
+  if (visibleProjects.join(",") !== "排序测试二,排序测试一")
+    throw new Error(`已完成项目仍出现在侧栏: ${visibleProjects.join(",")}`);
+  const activeDot = await page.locator(".sidebar-project-list .project-dot.active")
+    .evaluate((node) => getComputedStyle(node).backgroundColor);
+  const plannedDot = await page.locator(".sidebar-project-list .project-dot.planned")
+    .evaluate((node) => getComputedStyle(node).backgroundColor);
+  if (activeDot === plannedDot) throw new Error("计划中与进行中的圆点颜色相同");
+  await page.getByRole("button", { name: "上移 排序测试一" }).click();
+  await page.reload({ waitUntil: "networkidle" });
+  const reorderedVisible = await page.locator(".sidebar-project-list .project-link-name").allTextContents();
+  if (reorderedVisible.join(",") !== "排序测试一,排序测试二")
+    throw new Error(`隐藏已完成项目后排序错误: ${reorderedVisible.join(",")}`);
+  const statusData = await fetch(`http://127.0.0.1:${port}/api/data`).then((response) => response.json());
+  if (statusData.projects.find((project) => project.name === "排序测试三")?.status !== "done")
+    throw new Error("已完成项目未保存在项目数据中");
+  console.log("侧栏隐藏已完成项目，计划中与进行中颜色不同且可跨已完成项目排序");
 
   await page.getByRole("button", { name: "数据与导入" }).click();
   const ics =
@@ -72,12 +183,7 @@ try {
   }
   console.log("任务持久化与 .ics 导入正常");
 
-  const today = new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  const today = creationDay;
   const orderedData = {
     ...saved,
     events: [
@@ -138,7 +244,6 @@ try {
   await page.getByRole("heading", { name: "任务清单" }).waitFor();
   await page.getByRole("button", { name: "添加任务", exact: true }).click();
   await page.getByRole("textbox", { name: "标题" }).fill("新功能验证任务");
-  await page.getByLabel("日期", { exact: true }).fill(today);
   await page.getByLabel("截止日期").fill(today);
   await page.getByLabel("预计完成时间").fill(`${today}T20:00`);
   await page

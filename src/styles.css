@@ -134,6 +134,10 @@ button:active {
 .sidebar-section {
   margin-top: 42px;
   padding: 0 6px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
 }
 .section-mini-head {
   display: flex;
@@ -159,11 +163,50 @@ button:active {
   color: #a4abb5;
   padding: 0 8px;
 }
+.sidebar-project-list {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.project-list-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: 6px;
+  position: relative;
+  transition: opacity 150ms ease;
+}
+.project-list-row.dragging {
+  opacity: 0.45;
+}
+.project-list-row.drop-before::before,
+.project-list-row.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  border-radius: 2px;
+  background: #4168cf;
+  pointer-events: none;
+  z-index: 1;
+}
+.project-list-row.drop-before::before {
+  top: -1px;
+}
+.project-list-row.drop-after::after {
+  bottom: -1px;
+}
+.project-list-row:hover,
+.project-list-row:focus-within {
+  background: #f0f2f5;
+}
 .project-link {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   border: 0;
   background: transparent;
   border-radius: 6px;
@@ -172,21 +215,36 @@ button:active {
   text-align: left;
   font-size: 12px;
   white-space: nowrap;
+  cursor: grab;
+}
+.project-link:active {
+  cursor: grabbing;
+}
+.project-link-name {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.project-move-actions {
+  display: flex;
+  flex: none;
+}
+.project-move-actions .icon-button {
+  width: 22px;
+  height: 28px;
+}
+.project-move-actions .icon-button svg {
+  width: 14px;
+  height: 14px;
 }
 .project-dot {
   flex: none;
   width: 8px;
   height: 8px;
   border-radius: 3px;
-  background: #a5adb8;
+  background: #c18a2b;
 }
 .project-dot.active {
-  background: #5980d8;
-}
-.project-dot.done {
-  background: #64aa89;
+  background: #3b9b77;
 }
 .sidebar-bottom {
   margin-top: auto;
@@ -582,8 +640,8 @@ button:active {
   padding: 0 5px;
 }
 .calendar-event {
-  color: #3158a3;
-  background: #e7eefc;
+  color: var(--event-text, #3158a3);
+  background: var(--event-background, #e7eefc);
 }
 .calendar-event b {
   font-weight: 700;
@@ -776,7 +834,7 @@ button:active {
   background: #dc7777;
 }
 .event-list .event-row:before {
-  display: none;
+  background: var(--event-accent, #7091d5);
 }
 .event-row:before {
   content: "";
@@ -1522,6 +1580,32 @@ button.contribution-day:hover {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+.event-color-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.event-color-option {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  color: #fff;
+  box-shadow: 0 0 0 1px #dfe4e9;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.event-color-option:hover {
+  transform: scale(1.1);
+}
+.event-color-option.selected,
+.event-color-option:focus-visible {
+  box-shadow: 0 0 0 2px #34445c;
+  outline: 0;
 }
 .form-error {
   color: #b34343;

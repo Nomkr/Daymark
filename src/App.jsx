@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   CircleHelp,
   ClipboardList,
   Code2,
@@ -46,6 +47,22 @@ const projectStatuses = [
   { id: "active", label: "进行中" },
   { id: "done", label: "已完成" },
 ];
+const eventColors = [
+  { id: "blue", label: "蓝色", accent: "#5278c4", text: "#3158a3", background: "#e7eefc" },
+  { id: "teal", label: "青色", accent: "#348c91", text: "#176a70", background: "#e2f3f1" },
+  { id: "green", label: "绿色", accent: "#4a9a70", text: "#2a744d", background: "#e6f4e9" },
+  { id: "amber", label: "黄色", accent: "#c18a2b", text: "#875d16", background: "#fff2d6" },
+  { id: "coral", label: "珊瑚色", accent: "#c46c60", text: "#984b42", background: "#fbeae6" },
+  { id: "violet", label: "紫色", accent: "#9271b6", text: "#684989", background: "#f0eafb" },
+];
+function eventColorStyle(event) {
+  const color = eventColors.find((option) => option.id === event.color) || eventColors[0];
+  return {
+    "--event-accent": color.accent,
+    "--event-text": color.text,
+    "--event-background": color.background,
+  };
+}
 function normalizeProjectStatus(status) {
   if (status === "active" || status === "done" || status === "planned") {
     return status;
@@ -106,6 +123,10 @@ function monthDays(month) {
 
 function byStartTime(a, b) {
   return (a.time || "").localeCompare(b.time || "");
+}
+
+function taskCalendarDate(task) {
+  return task.expectedAt?.slice(0, 10) || "";
 }
 
 function dateCountdown(date, today, completed, kind) {
@@ -351,7 +372,7 @@ function EditDialog({ type, item, projects, selectedDate, onClose, onSave, onNot
     type === "task"
       ? {
           title: "",
-          date: selectedDate,
+          date: dateKey(new Date()),
           deadline: "",
           expectedAt: "",
           details: "",
@@ -366,6 +387,7 @@ function EditDialog({ type, item, projects, selectedDate, onClose, onSave, onNot
             date: selectedDate,
             time: "",
             endTime: "",
+            color: "blue",
             source: "manual",
           };
   const [form, setForm] = useState({ ...defaults, ...item });
@@ -428,7 +450,7 @@ function EditDialog({ type, item, projects, selectedDate, onClose, onSave, onNot
               }
             />
           </label>
-          {type !== "project" && (
+          {type === "event" && (
             <label className="field">
               <span>日期</span>
               <input
@@ -547,24 +569,47 @@ function EditDialog({ type, item, projects, selectedDate, onClose, onSave, onNot
             </>
           )}
           {type === "event" && (
-            <div className="field-row">
-              <label className="field">
-                <span>开始时间</span>
-                <input
-                  type="time"
-                  value={form.time || ""}
-                  onChange={(event) => update("time", event.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>结束时间</span>
-                <input
-                  type="time"
-                  value={form.endTime || ""}
-                  onChange={(event) => update("endTime", event.target.value)}
-                />
-              </label>
-            </div>
+            <>
+              <div className="field-row">
+                <label className="field">
+                  <span>开始时间</span>
+                  <input
+                    type="time"
+                    value={form.time || ""}
+                    onChange={(event) => update("time", event.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>结束时间</span>
+                  <input
+                    type="time"
+                    value={form.endTime || ""}
+                    onChange={(event) => update("endTime", event.target.value)}
+                  />
+                </label>
+              </div>
+              {form.source !== "ics" && (
+                <div className="field">
+                  <span id="event-color-label">日程颜色</span>
+                  <div className="event-color-options" role="group" aria-labelledby="event-color-label">
+                    {eventColors.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={`event-color-option ${(form.color || "blue") === option.id ? "selected" : ""}`}
+                        style={{ backgroundColor: option.accent }}
+                        title={option.label}
+                        aria-label={option.label}
+                        aria-pressed={(form.color || "blue") === option.id}
+                        onClick={() => update("color", option.id)}
+                      >
+                        {(form.color || "blue") === option.id && <Check size={16} strokeWidth={2.5} />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
           {error && <p className="form-error">{error}</p>}
         </div>
@@ -601,6 +646,8 @@ export default function App() {
   const [completionDateFilter, setCompletionDateFilter] = useState("");
   const [projectCompletionDateFilter, setProjectCompletionDateFilter] =
     useState("");
+  const [draggedProjectId, setDraggedProjectId] = useState("");
+  const [projectDropTarget, setProjectDropTarget] = useState(null);
   const [notice, setNotice] = useState("");
   const icsRef = useRef(null);
   const backupRef = useRef(null);
@@ -669,7 +716,12 @@ export default function App() {
   const days = useMemo(() => monthDays(month), [month]);
   const personalTasks = data.tasks.filter((task) => !task.projectId);
   const projectTasks = data.tasks.filter((task) => task.projectId);
-  const dayTasks = personalTasks.filter((task) => task.date === selectedDate);
+  const sidebarProjects = data.projects.filter(
+    (project) => normalizeProjectStatus(project.status) !== "done",
+  );
+  const dayTasks = personalTasks
+    .filter((task) => taskCalendarDate(task) === selectedDate)
+    .sort((a, b) => a.expectedAt.localeCompare(b.expectedAt));
   const dayEvents = data.events
     .filter((event) => event.date === selectedDate)
     .sort(byStartTime);
@@ -748,6 +800,41 @@ export default function App() {
     }));
     setDialog(null);
     showNotice("已保存");
+  }
+
+  function moveProject(id, direction) {
+    setData((current) => {
+      const visibleProjects = current.projects.filter(
+        (project) => normalizeProjectStatus(project.status) !== "done",
+      );
+      const visibleIndex = visibleProjects.findIndex((project) => project.id === id);
+      const neighbor = visibleProjects[visibleIndex + direction];
+      if (visibleIndex < 0 || !neighbor) return current;
+      const projects = [...current.projects];
+      const index = projects.findIndex((project) => project.id === id);
+      const nextIndex = projects.findIndex((project) => project.id === neighbor.id);
+      [projects[index], projects[nextIndex]] = [projects[nextIndex], projects[index]];
+      return { ...current, projects };
+    });
+  }
+
+  function moveProjectTo(id, targetId, after) {
+    if (id === targetId) return;
+    setData((current) => {
+      const projects = [...current.projects];
+      const sourceIndex = projects.findIndex((project) => project.id === id);
+      if (sourceIndex < 0 || !projects.some((project) => project.id === targetId))
+        return current;
+      const [project] = projects.splice(sourceIndex, 1);
+      const targetIndex = projects.findIndex((item) => item.id === targetId);
+      projects.splice(targetIndex + (after ? 1 : 0), 0, project);
+      return { ...current, projects };
+    });
+  }
+
+  function projectDropAfter(event) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    return event.clientY >= bounds.top + bounds.height / 2;
   }
 
   function deleteItem(type, id, customLabel) {
@@ -935,7 +1022,6 @@ export default function App() {
         <div className="task-content">
           <strong>{task.title}</strong>
           <div className="row-meta">
-            {!compact && <span>{task.date || "无日期"}</span>}
             {deadline && (
               <span className={`deadline-badge ${deadline.state}`}>
                 {deadline.text}
@@ -1050,21 +1136,68 @@ export default function App() {
               onClick={() => setDialog({ type: "project" })}
             />
           </div>
-          {data.projects.length ? (
-            data.projects.slice(0, 8).map((project) => (
-              <button
-                className="project-link"
-                key={project.id}
-                onClick={() => {
-                  changeView("projects");
-                }}
-              >
-                <span className="project-dot" />
-                {project.name}
-              </button>
-            ))
+          {sidebarProjects.length ? (
+            <div className="sidebar-project-list">
+              {sidebarProjects.map((project, index) => (
+                <div
+                  className={`project-list-row ${draggedProjectId === project.id ? "dragging" : ""} ${projectDropTarget?.id === project.id ? (projectDropTarget.after ? "drop-after" : "drop-before") : ""}`}
+                  key={project.id}
+                  onDragOver={(event) => {
+                    if (!draggedProjectId || draggedProjectId === project.id) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    const after = projectDropAfter(event);
+                    setProjectDropTarget((current) =>
+                      current?.id === project.id && current.after === after
+                        ? current
+                        : { id: project.id, after },
+                    );
+                  }}
+                  onDrop={(event) => {
+                    if (!draggedProjectId) return;
+                    event.preventDefault();
+                    moveProjectTo(draggedProjectId, project.id, projectDropAfter(event));
+                    setDraggedProjectId("");
+                    setProjectDropTarget(null);
+                  }}
+                >
+                  <button
+                    className="project-link"
+                    onClick={() => changeView("projects")}
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", project.id);
+                      setDraggedProjectId(project.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedProjectId("");
+                      setProjectDropTarget(null);
+                    }}
+                    title={`${project.name} · ${projectStatuses.find((status) => status.id === normalizeProjectStatus(project.status))?.label} · 拖动排序`}
+                  >
+                    <span className={`project-dot ${normalizeProjectStatus(project.status)}`} />
+                    <span className="project-link-name">{project.name}</span>
+                  </button>
+                  <div className="project-move-actions">
+                    <IconButton
+                      icon={ChevronUp}
+                      label={`上移 ${project.name}`}
+                      onClick={() => moveProject(project.id, -1)}
+                      disabled={index === 0}
+                    />
+                    <IconButton
+                      icon={ChevronDown}
+                      label={`下移 ${project.name}`}
+                      onClick={() => moveProject(project.id, 1)}
+                      disabled={index === sidebarProjects.length - 1}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
-            <p className="sidebar-hint">项目会显示在这里</p>
+            <p className="sidebar-hint">暂无待关注项目</p>
           )}
         </div>
         <div className="sidebar-bottom">
@@ -1171,9 +1304,6 @@ export default function App() {
                 <div>
                   <p className="eyebrow">YOUR TIME</p>
                   <h1 className="month-heading">{monthLabel(month)}</h1>
-                  <p className="page-subtitle">
-                    把每天的日程和任务，放在同一个地方。
-                  </p>
                 </div>
                 <div className="calendar-controls">
                   <button className="button secondary" onClick={goToday}>
@@ -1219,8 +1349,8 @@ export default function App() {
                   <div className="month-grid">
                     {days.map((day) => {
                       const tasks = personalTasks.filter(
-                        (task) => task.date === day.key,
-                      );
+                        (task) => taskCalendarDate(task) === day.key,
+                      ).sort((a, b) => a.expectedAt.localeCompare(b.expectedAt));
                       const events = data.events
                         .filter((event) => event.date === day.key)
                         .sort(byStartTime);
@@ -1260,6 +1390,7 @@ export default function App() {
                                     )}
                                   <span
                                     className="calendar-event"
+                                    style={eventColorStyle(item)}
                                     title={`${item.time ? `${item.time} ` : ""}${item.title}`}
                                   >
                                     {item.time && <b>{item.time}</b>}{" "}
@@ -1330,7 +1461,7 @@ export default function App() {
                                     <span>{nowTime}</span>
                                   </div>
                                 )}
-                              <div className="event-row">
+                              <div className="event-row" style={eventColorStyle(event)}>
                                 <time>{event.time || "全天"}</time>
                                 <div>
                                   <strong>{event.title}</strong>
