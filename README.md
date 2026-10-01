@@ -9,7 +9,7 @@ Daymark 是一个面向个人使用的本地优先日程与项目工作台。它
 
 当前版本：`0.6.1`
 
-![](C:\Users\20621\Desktop\my_code\Project\Hang-ToDoList\Daymark-open-source\image\e1407d5cfdf004a5aa3f80262041aa2a.png)
+![Daymark page preview]("C:\Users\20621\Desktop\my_code\Project\Hang-ToDoList\Daymark-open-source\image\e1407d5cfdf004a5aa3f80262041aa2a.png")
 
 ## 它解决什么问题
 
