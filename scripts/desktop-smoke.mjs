@@ -75,6 +75,7 @@ try {
   await page.getByRole("textbox", { name: "标题" }).fill("桌面版测试任务");
   await page.getByRole("button", { name: "保存任务" }).click();
   await page.reload();
+  await page.locator(".main-nav .nav-item").filter({ hasText: "任务" }).click();
   await page.locator(".task-row").getByText("桌面版测试任务").waitFor();
 
   const saved = JSON.parse(

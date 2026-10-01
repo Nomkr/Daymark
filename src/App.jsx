@@ -35,6 +35,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 });
 const emptyData = {
   version: 1,
+  heatmapColor: "green",
   tasks: [],
   notes: [],
   quickNote: "",
@@ -45,7 +46,13 @@ const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 const projectStatuses = [
   { id: "planned", label: "计划中" },
   { id: "active", label: "进行中" },
-  { id: "done", label: "已完成" },
+  { id: "improving", label: "完善中" },
+  { id: "done", label: "结项" },
+];
+const heatmapColors = [
+  { id: "green", label: "绿色" },
+  { id: "red", label: "红色" },
+  { id: "blue", label: "蓝色" },
 ];
 const eventColors = [
   { id: "blue", label: "蓝色", accent: "#5278c4", text: "#3158a3", background: "#e7eefc" },
@@ -64,11 +71,30 @@ function eventColorStyle(event) {
   };
 }
 function normalizeProjectStatus(status) {
-  if (status === "active" || status === "done" || status === "planned") {
+  if (
+    status === "active" ||
+    status === "done" ||
+    status === "planned" ||
+    status === "improving"
+  ) {
     return status;
   }
   if (status === "completed") return "done";
   return "planned";
+}
+function normalizeHeatmapColor(color) {
+  return heatmapColors.some((option) => option.id === color) ? color : "green";
+}
+function normalizeProjectActivity(activity) {
+  if (!activity || typeof activity !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(activity).filter(
+      ([date, count]) =>
+        /^\d{4}-\d{2}-\d{2}$/.test(date) &&
+        Number.isFinite(count) &&
+        count > 0,
+    ),
+  );
 }
 function dateKey(date) {
   const parts = Object.fromEntries(
@@ -248,9 +274,12 @@ function EmptyState({ icon: Icon, title, detail, action, onAction }) {
 
 function ContributionHeatmap({
   tasks,
+  manualRecords = [],
   today,
   selectedDate,
   onSelectDate,
+  color = "green",
+  onColorChange,
   title = "完成记录",
   ariaLabel = "任务完成热力图",
   variant = "tasks",
@@ -274,6 +303,11 @@ function ContributionHeatmap({
       )
         continue;
       counts.set(task.completedAt, (counts.get(task.completedAt) || 0) + 1);
+    }
+    for (const record of manualRecords) {
+      for (const [date, count] of Object.entries(record.activity || {})) {
+        counts.set(date, (counts.get(date) || 0) + Number(count || 0));
+      }
     }
     const start = new Date(`${today}T00:00:00Z`);
     start.setUTCDate(
@@ -299,11 +333,13 @@ function ContributionHeatmap({
         .flat()
         .reduce((sum, day) => sum + (day.future ? 0 : day.count), 0),
     };
-  }, [tasks, today]);
+  }, [tasks, manualRecords, today]);
+
+  const unit = variant === "projects" ? "次项目进展" : "项任务";
 
   return (
     <section
-      className={`contribution-section contribution-${variant}`}
+      className={`contribution-section contribution-${variant} contribution-color-${normalizeHeatmapColor(color)}`}
       aria-label={ariaLabel}
     >
       <div className="contribution-head">
@@ -316,15 +352,33 @@ function ContributionHeatmap({
             title="旧版已完成任务没有完成日期，不计入热力图"
           />
         </div>
-        {selectedDate && (
-          <button
-            type="button"
-            className="text-action"
-            onClick={() => onSelectDate("")}
-          >
-            清除日期筛选 <X size={13} />
-          </button>
-        )}
+        <div className="contribution-tools">
+          {onColorChange && (
+            <label className="heatmap-color-control">
+              <span>颜色</span>
+              <select
+                aria-label={`${title}颜色`}
+                value={normalizeHeatmapColor(color)}
+                onChange={(event) => onColorChange(event.target.value)}
+              >
+                {heatmapColors.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {selectedDate && (
+            <button
+              type="button"
+              className="text-action"
+              onClick={() => onSelectDate("")}
+            >
+              清除日期筛选 <X size={13} />
+            </button>
+          )}
+        </div>
       </div>
       <div className="contribution-scroll" ref={scrollRef}>
         <div className="contribution-content">
@@ -351,9 +405,9 @@ function ContributionHeatmap({
                     <button
                       key={day.key}
                       type="button"
-                      className={`contribution-day level-${Math.min(day.count, 4)} ${selectedDate === day.key ? "selected" : ""}`}
-                      aria-label={`${day.key} 完成 ${day.count} 项任务`}
-                      title={`${day.key} · 完成 ${day.count} 项任务`}
+                      className={`contribution-day level-${Math.min(day.count, 5)} ${selectedDate === day.key ? "selected" : ""}`}
+                      aria-label={`${day.key} 完成 ${day.count} ${unit}`}
+                      title={`${day.key} · 完成 ${day.count} ${unit}`}
                       aria-pressed={selectedDate === day.key}
                       onClick={() => onSelectDate(day.key)}
                     />
@@ -679,6 +733,7 @@ export default function App() {
         setData({
           ...emptyData,
           ...value,
+          heatmapColor: normalizeHeatmapColor(value.heatmapColor),
           quickNote: typeof value.quickNote === "string" ? value.quickNote : "",
           tasks: (value.tasks || []).map((task) => ({
             ...task,
@@ -687,6 +742,7 @@ export default function App() {
           projects: (value.projects || []).map((project) => ({
             ...project,
             status: normalizeProjectStatus(project.status),
+            activity: normalizeProjectActivity(project.activity),
           })),
         });
         setLoaded(true);
@@ -757,6 +813,13 @@ export default function App() {
     setData((current) => ({ ...current, quickNote: text }));
   }
 
+  function setHeatmapColor(color) {
+    setData((current) => ({
+      ...current,
+      heatmapColor: normalizeHeatmapColor(color),
+    }));
+  }
+
   function changeView(nextView) {
     if (nextView === view) return;
     const update = () => setView(nextView);
@@ -788,7 +851,11 @@ export default function App() {
     const key = `${type}s`;
     const savedItem =
       type === "project"
-        ? { ...item, status: normalizeProjectStatus(item.status) }
+        ? {
+            ...item,
+            status: normalizeProjectStatus(item.status),
+            activity: normalizeProjectActivity(item.activity),
+          }
         : item;
     setData((current) => ({
       ...current,
@@ -800,6 +867,24 @@ export default function App() {
     }));
     setDialog(null);
     showNotice("已保存");
+  }
+
+  function recordProjectActivity(projectId) {
+    setData((current) => ({
+      ...current,
+      projects: current.projects.map((project) => {
+        if (project.id !== projectId) return project;
+        const activity = normalizeProjectActivity(project.activity);
+        return {
+          ...project,
+          activity: {
+            ...activity,
+            [currentDay]: (activity[currentDay] || 0) + 1,
+          },
+        };
+      }),
+    }));
+    showNotice("已记录今天的项目进展");
   }
 
   function moveProject(id, direction) {
@@ -980,10 +1065,16 @@ export default function App() {
       setData({
         ...emptyData,
         ...next,
+        heatmapColor: normalizeHeatmapColor(next.heatmapColor),
         quickNote: typeof next.quickNote === "string" ? next.quickNote : "",
         tasks: next.tasks.map((task) => ({
           ...task,
           projectId: task.projectId || "",
+        })),
+        projects: next.projects.map((project) => ({
+          ...project,
+          status: normalizeProjectStatus(project.status),
+          activity: normalizeProjectActivity(project.activity),
         })),
       });
       setSettingsOpen(false);
@@ -1587,6 +1678,8 @@ export default function App() {
                 today={currentDay}
                 title="我的任务完成记录"
                 ariaLabel="我的任务完成热力图"
+                color={data.heatmapColor}
+                onColorChange={setHeatmapColor}
                 selectedDate={completionDateFilter}
                 onSelectDate={(date) => {
                   setCompletionDateFilter(date);
@@ -1705,10 +1798,13 @@ export default function App() {
               </div>
               <ContributionHeatmap
                 tasks={projectTasks}
+                manualRecords={data.projects}
                 today={currentDay}
                 title="子任务完成记录"
                 ariaLabel="项目子任务完成热力图"
                 variant="projects"
+                color={data.heatmapColor}
+                onColorChange={setHeatmapColor}
                 selectedDate={projectCompletionDateFilter}
                 onSelectDate={setProjectCompletionDateFilter}
               />
@@ -1787,6 +1883,15 @@ export default function App() {
                                       ? `${tasks.length} 项子任务`
                                       : "还没有子任务"}
                                   </span>
+                                  <button
+                                    type="button"
+                                    className="project-activity-button"
+                                    aria-label={`记录 ${project.name} 今天的进展`}
+                                    title="记录今天的项目进展"
+                                    onClick={() => recordProjectActivity(project.id)}
+                                  >
+                                    <Plus size={13} /> 记录进展
+                                  </button>
                                 </div>
                                 {tasks.length > 0 && (
                                   <div className="subtask-list" aria-label={`${project.name} 子任务`}>

@@ -155,7 +155,29 @@ try {
   const statusData = await fetch(`http://127.0.0.1:${port}/api/data`).then((response) => response.json());
   if (statusData.projects.find((project) => project.name === "排序测试三")?.status !== "done")
     throw new Error("已完成项目未保存在项目数据中");
-  console.log("侧栏隐藏已完成项目，计划中与进行中颜色不同且可跨已完成项目排序");
+  await page.getByRole("button", { name: "项目", exact: true }).click();
+  await page.locator(".project-card").filter({ hasText: "排序测试一" })
+    .getByRole("button", { name: "编辑项目" }).click();
+  await page.getByLabel("项目状态").selectOption("improving");
+  await page.getByRole("button", { name: "保存项目" }).click();
+  const improvingProjects = await page.locator(".sidebar-project-list .project-link-name").allTextContents();
+  if (improvingProjects.join(",") !== "排序测试一,排序测试二")
+    throw new Error("完善中的项目未显示在侧栏");
+  const improvingDot = await page.locator(".sidebar-project-list .project-dot.improving")
+    .evaluate((node) => getComputedStyle(node).backgroundColor);
+  if ([activeDot, plannedDot].includes(improvingDot))
+    throw new Error("完善中的项目圆点颜色未与其他状态区分");
+  const activityButton = page.getByRole("button", { name: "记录 排序测试一 今天的进展" });
+  for (let index = 0; index < 5; index++) await activityButton.click();
+  await page.waitForFunction(async () => {
+    const response = await fetch("/api/data");
+    const saved = await response.json();
+    return saved.projects.find((project) => project.name === "排序测试一")?.activity?.[new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date())] === 5;
+  });
+  await page.getByLabel("子任务完成记录颜色").selectOption("red");
+  await page.locator(".contribution-projects.contribution-color-red").waitFor();
+  await page.getByRole("button", { name: `${creationDay} 完成 5 次项目进展` }).waitFor();
+  console.log("项目状态支持完善中与结项，完善中显示在侧栏，项目进展可手动记录且热力图支持五档与红色主题");
 
   await page.getByRole("button", { name: "数据与导入" }).click();
   const ics =
@@ -321,7 +343,9 @@ try {
     .getByRole("button", { name: "标记为完成" })
     .click();
   await page.getByText("过去一年完成 1 项").waitFor();
-  for (let index = 2; index <= 4; index++) {
+  await page.getByLabel("我的任务完成记录颜色").selectOption("blue");
+  await page.locator(".contribution-tasks.contribution-color-blue").waitFor();
+  for (let index = 2; index <= 5; index++) {
     await page.getByRole("button", { name: "添加任务", exact: true }).click();
     await page
       .getByRole("textbox", { name: "标题" })

@@ -246,6 +246,9 @@ button:active {
 .project-dot.active {
   background: #3b9b77;
 }
+.project-dot.improving {
+  background: #6878c5;
+}
 .sidebar-bottom {
   margin-top: auto;
   position: relative;
@@ -1117,6 +1120,27 @@ button:active {
 .contribution-head svg {
   flex: none;
 }
+.contribution-tools {
+  gap: 10px !important;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.heatmap-color-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #8b96a3;
+  font-size: 10px;
+}
+.heatmap-color-control select {
+  height: 26px;
+  border: 1px solid #e1e5e9;
+  border-radius: 5px;
+  background: #fff;
+  color: #556274;
+  font-size: 10px;
+  padding: 0 6px;
+}
 .contribution-scroll {
   max-width: 100%;
   overflow-x: auto;
@@ -1175,21 +1199,45 @@ button:active {
   border-radius: 2px;
   background: #e5e9ed;
 }
+.contribution-color-green {
+  --heatmap-1: #d6eadb;
+  --heatmap-2: #b9ddc5;
+  --heatmap-3: #79bc91;
+  --heatmap-4: #3e9566;
+  --heatmap-5: #21744c;
+}
+.contribution-color-red {
+  --heatmap-1: #f9dcd8;
+  --heatmap-2: #f2b9b1;
+  --heatmap-3: #e98b80;
+  --heatmap-4: #cf5c50;
+  --heatmap-5: #a83b32;
+}
+.contribution-color-blue {
+  --heatmap-1: #d9e6fa;
+  --heatmap-2: #b1caef;
+  --heatmap-3: #7ca5df;
+  --heatmap-4: #4e7fc4;
+  --heatmap-5: #315b9f;
+}
 button.contribution-day:hover {
   outline: 1px solid #668c75;
   outline-offset: 1px;
 }
 .contribution-day.level-1 {
-  background: #b9ddc5;
+  background: var(--heatmap-1);
 }
 .contribution-day.level-2 {
-  background: #79bc91;
+  background: var(--heatmap-2);
 }
 .contribution-day.level-3 {
-  background: #3e9566;
+  background: var(--heatmap-3);
 }
 .contribution-day.level-4 {
-  background: #21744c;
+  background: var(--heatmap-4);
+}
+.contribution-day.level-5 {
+  background: var(--heatmap-5);
 }
 .contribution-day.future {
   background: transparent;
@@ -1197,18 +1245,6 @@ button.contribution-day:hover {
 .contribution-day.selected {
   outline: 2px solid #315bc4;
   outline-offset: 1px;
-}
-.contribution-projects .contribution-day.level-1 {
-  background: #b9d8dc;
-}
-.contribution-projects .contribution-day.level-2 {
-  background: #7eb9bc;
-}
-.contribution-projects .contribution-day.level-3 {
-  background: #459598;
-}
-.contribution-projects .contribution-day.level-4 {
-  background: #287277;
 }
 .segmented {
   display: inline-flex;
@@ -1322,7 +1358,7 @@ button.contribution-day:hover {
 }
 .project-board {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 17px;
   align-items: start;
 }
@@ -1694,6 +1730,7 @@ button.contribution-day:hover {
     border-right: 0;
   }
   .project-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
   }
   .project-card {

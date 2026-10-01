@@ -1,7 +1,7 @@
 {
   "name": "daymark",
   "private": false,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "productName": "Daymark",
   "description": "本地优先的个人日程与项目工作台",
   "author": "Daymark contributors",
