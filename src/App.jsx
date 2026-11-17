@@ -16,6 +16,7 @@ import {
   FileUp,
   Folder,
   FolderKanban,
+  GripVertical,
   LayoutGrid,
   NotebookPen,
   Pencil,
@@ -23,6 +24,7 @@ import {
   Search,
   Settings2,
   Trash2,
+  Undo2,
   X,
 } from "lucide-react";
 
@@ -36,6 +38,8 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 const emptyData = {
   version: 1,
   heatmapColor: "green",
+  taskActivity: {},
+  taskSort: "priority",
   tasks: [],
   notes: [],
   quickNote: "",
@@ -283,6 +287,9 @@ function ContributionHeatmap({
   title = "完成记录",
   ariaLabel = "任务完成热力图",
   variant = "tasks",
+  onRecordProgress,
+  onUndoProgress,
+  progressCount = 0,
 }) {
   const scrollRef = useRef(null);
   useEffect(() => {
@@ -294,8 +301,9 @@ function ContributionHeatmap({
     window.addEventListener("resize", showRecent);
     return () => window.removeEventListener("resize", showRecent);
   }, []);
-  const { weeks, total, months } = useMemo(() => {
+  const { weeks, total, taskTotal, manualTotal, months } = useMemo(() => {
     const counts = new Map();
+    const taskCounts = new Map();
     for (const task of tasks) {
       if (
         !task.completed ||
@@ -303,6 +311,7 @@ function ContributionHeatmap({
       )
         continue;
       counts.set(task.completedAt, (counts.get(task.completedAt) || 0) + 1);
+      taskCounts.set(task.completedAt, (taskCounts.get(task.completedAt) || 0) + 1);
     }
     for (const record of manualRecords) {
       for (const [date, count] of Object.entries(record.activity || {})) {
@@ -318,7 +327,7 @@ function ContributionHeatmap({
         const date = new Date(start);
         date.setUTCDate(start.getUTCDate() + weekIndex * 7 + dayIndex);
         const key = date.toISOString().slice(0, 10);
-        return { key, count: counts.get(key) || 0, future: key > today };
+        return { key, count: counts.get(key) || 0, taskCount: taskCounts.get(key) || 0, future: key > today };
       }),
     );
     const months = weeks.flatMap((week, index) => {
@@ -332,6 +341,8 @@ function ContributionHeatmap({
       total: weeks
         .flat()
         .reduce((sum, day) => sum + (day.future ? 0 : day.count), 0),
+      taskTotal: weeks.flat().reduce((sum, day) => sum + (day.future ? 0 : day.taskCount), 0),
+      manualTotal: weeks.flat().reduce((sum, day) => sum + (day.future ? 0 : day.count - day.taskCount), 0),
     };
   }, [tasks, manualRecords, today]);
 
@@ -345,14 +356,20 @@ function ContributionHeatmap({
       <div className="contribution-head">
         <div>
           <h2>{title}</h2>
-          <span>过去一年完成 {total} 项</span>
+          <span>过去一年完成 {variant === "tasks" ? taskTotal : total} 项</span>
+          {variant === "tasks" && manualTotal > 0 && <span>学习进展 {manualTotal} 次</span>}
           <CircleHelp
             size={14}
-            aria-label="旧版已完成任务没有完成日期，不计入热力图"
-            title="旧版已完成任务没有完成日期，不计入热力图"
+            aria-label="完成任务和手动进展都会点亮热力图；旧版无完成日期的任务不计入"
+            title="完成任务和手动进展都会点亮热力图；旧版无完成日期的任务不计入"
           />
         </div>
         <div className="contribution-tools">
+          {onRecordProgress && (
+            <button type="button" className="progress-record-button" onClick={onRecordProgress}>
+              <Plus size={14} />记录学习进展
+            </button>
+          )}
           {onColorChange && (
             <label className="heatmap-color-control">
               <span>颜色</span>
@@ -406,8 +423,12 @@ function ContributionHeatmap({
                       key={day.key}
                       type="button"
                       className={`contribution-day level-${Math.min(day.count, 5)} ${selectedDate === day.key ? "selected" : ""}`}
-                      aria-label={`${day.key} 完成 ${day.count} ${unit}`}
-                      title={`${day.key} · 完成 ${day.count} ${unit}`}
+                      aria-label={variant === "tasks" && day.count > day.taskCount
+                        ? `${day.key} 完成 ${day.taskCount} 项任务，学习进展 ${day.count - day.taskCount} 次`
+                        : `${day.key} 完成 ${day.count} ${unit}`}
+                      title={variant === "tasks"
+                        ? `${day.key} · 完成 ${day.taskCount} 项任务 · 学习进展 ${day.count - day.taskCount} 次`
+                        : `${day.key} · 完成 ${day.count} ${unit}`}
                       aria-pressed={selectedDate === day.key}
                       onClick={() => onSelectDate(day.key)}
                     />
@@ -417,6 +438,20 @@ function ContributionHeatmap({
           </div>
         </div>
       </div>
+      {onRecordProgress && (
+        <div className="contribution-footer">
+          <div className="learning-summary">
+            <span>今天学习 {progressCount} 次</span>
+            <span className="learning-hint">完成一小步，也值得记录</span>
+            <button type="button" className="text-action" onClick={onUndoProgress} disabled={!progressCount} aria-label="撤销今天一次学习进展">
+              <Undo2 size={12} />撤销一次
+            </button>
+          </div>
+          <div className="heatmap-legend" aria-label="热力图颜色由浅到深表示进展由少到多">
+            <span>少</span>{[0, 1, 2, 3, 4, 5].map(level => <i key={level} className={`contribution-day level-${level}`} />)}<span>多</span>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -680,6 +715,106 @@ function EditDialog({ type, item, projects, selectedDate, onClose, onSave, onNot
   );
 }
 
+function TaskRow({ task, compact = false, project, currentDay, onToggle, onEdit, onDelete, reorder }) {
+  const taskLabel = task.projectId ? "子任务" : "任务";
+  const deadline = dateCountdown(
+    task.deadline,
+    currentDay,
+    task.completed,
+    "截止",
+  );
+  const expected = dateCountdown(
+    task.expectedAt?.slice(0, 10),
+    currentDay,
+    task.completed,
+    "预计",
+  );
+  return (
+    <div
+      className={`task-row ${task.completed ? "is-done" : ""} ${compact ? "compact" : ""} ${reorder ? "is-sortable" : ""} ${reorder?.dropPosition || ""}`}
+      data-task-id={task.id}
+      onDragOver={reorder?.onDragOver}
+      onDrop={reorder?.onDrop}
+      onDragLeave={reorder?.onDragLeave}
+    >
+      {reorder && (
+        <button type="button" className="task-drag-handle" draggable
+          aria-label={`调整 ${task.title} 的优先顺序`}
+          title="拖动排序，或聚焦后按上 / 下方向键"
+          onDragStart={reorder.onDragStart} onDragEnd={reorder.onDragEnd}
+          onKeyDown={event => {
+            if (!["ArrowUp", "ArrowDown"].includes(event.key)) return;
+            event.preventDefault();
+            reorder.onMove(event.key === "ArrowUp" ? -1 : 1);
+          }}>
+          <GripVertical size={14} />
+          <span className="task-rank" aria-hidden="true">{reorder.rank}</span>
+        </button>
+      )}
+      <button
+        className="task-check"
+        aria-label={task.completed ? "标记为未完成" : "标记为完成"}
+        onClick={() => onToggle(task.id)}
+      >
+        {task.completed && <Check size={13} strokeWidth={2.7} />}
+      </button>
+      <div className="task-content">
+        <strong>{task.title}</strong>
+        <div className="row-meta">
+          {deadline && (
+            <span className={`deadline-badge ${deadline.state}`}>
+              {deadline.text}
+            </span>
+          )}
+          {expected && (
+            <span className={`expected-badge ${expected.state}`}>
+              {expected.text}
+              {task.expectedAt?.slice(11) && ` ${task.expectedAt.slice(11)}`}
+            </span>
+          )}
+          {!compact && project && (
+            <span className="project-tag">{project.name}</span>
+          )}
+          {!compact && task.details && (
+            <span className="muted-ellipsis">{task.details}</span>
+          )}
+        </div>
+        {!compact && task.note && (
+          <button
+            className="task-note-preview"
+            onClick={() => onEdit(task)}
+            title="打开任务笔记"
+          >
+            <NotebookPen size={12} />
+            <span>{task.note}</span>
+          </button>
+        )}
+      </div>
+      <div className="row-actions">
+        {reorder && <>
+          <IconButton icon={ChevronUp} label={`上移 ${task.title}`} disabled={reorder.first} onClick={() => reorder.onMove(-1)} />
+          <IconButton icon={ChevronDown} label={`下移 ${task.title}`} disabled={reorder.last} onClick={() => reorder.onMove(1)} />
+        </>}
+        <IconButton
+          icon={NotebookPen}
+          label={task.note ? "编辑任务笔记" : "添加任务笔记"}
+          onClick={() => onEdit(task)}
+        />
+        <IconButton
+          icon={Pencil}
+          label={`编辑${taskLabel}`}
+          onClick={() => onEdit(task)}
+        />
+        <IconButton
+          icon={Trash2}
+          label={`删除${taskLabel}`}
+          onClick={() => onDelete(task.id, taskLabel)}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [currentDay, setCurrentDay] = useState(dateKey(new Date()));
   const [nowTime, setNowTime] = useState(currentTimeKey());
@@ -702,6 +837,8 @@ export default function App() {
     useState("");
   const [draggedProjectId, setDraggedProjectId] = useState("");
   const [projectDropTarget, setProjectDropTarget] = useState(null);
+  const draggedTask = useRef("");
+  const [taskDropTarget, setTaskDropTarget] = useState(null);
   const [notice, setNotice] = useState("");
   const icsRef = useRef(null);
   const backupRef = useRef(null);
@@ -734,6 +871,8 @@ export default function App() {
           ...emptyData,
           ...value,
           heatmapColor: normalizeHeatmapColor(value.heatmapColor),
+          taskActivity: normalizeProjectActivity(value.taskActivity),
+          taskSort: value.taskSort === "date" ? "date" : "priority",
           quickNote: typeof value.quickNote === "string" ? value.quickNote : "",
           tasks: (value.tasks || []).map((task) => ({
             ...task,
@@ -796,6 +935,7 @@ export default function App() {
         .includes(query.toLowerCase());
     })
     .sort((a, b) => {
+      if (data.taskSort !== "date") return Number(!!a.completed) - Number(!!b.completed);
       return (
         (a.expectedAt || "9999").localeCompare(b.expectedAt || "9999") ||
         (a.deadline || "9999").localeCompare(b.deadline || "9999") ||
@@ -803,7 +943,7 @@ export default function App() {
       );
     });
   const taskGroups = taskRows.reduce((groups, task) => {
-    const expectedDate = task.expectedAt?.slice(0, 10) || "";
+    const expectedDate = data.taskSort === "date" ? task.expectedAt?.slice(0, 10) || "" : "";
     const group = groups.find((item) => item.expectedDate === expectedDate);
     if (group) group.tasks.push(task);
     else groups.push({ expectedDate, tasks: [task] });
@@ -811,6 +951,91 @@ export default function App() {
   }, []);
   function saveQuickNote(text) {
     setData((current) => ({ ...current, quickNote: text }));
+  }
+
+  function recordLearningProgress(delta) {
+    setData((current) => {
+      const taskActivity = { ...current.taskActivity };
+      const count = Math.max(0, (taskActivity[currentDay] || 0) + delta);
+      if (count) taskActivity[currentDay] = count;
+      else delete taskActivity[currentDay];
+      return { ...current, taskActivity };
+    });
+    showNotice(delta > 0 ? "已记录今天的一次学习进展" : "已撤销今天的一次学习进展");
+  }
+
+  function reorderTasks(id, targetId, after, visibleIds) {
+    if (id === targetId) return;
+    setData((current) => {
+      // Replace only the visible pending slots; hidden and completed tasks stay put.
+      const visible = new Set(visibleIds);
+      const ordered = current.tasks.filter(task => visible.has(task.id));
+      const source = ordered.findIndex(task => task.id === id);
+      if (source < 0 || !ordered.some(task => task.id === targetId)) return current;
+      const [moved] = ordered.splice(source, 1);
+      const target = ordered.findIndex(task => task.id === targetId);
+      ordered.splice(target + (after ? 1 : 0), 0, moved);
+      let index = 0;
+      return { ...current, tasks: current.tasks.map(task => visible.has(task.id) ? ordered[index++] : task) };
+    });
+  }
+
+  function taskRowProps(task, compact = false) {
+    const pending = (task.projectId
+      ? data.tasks.filter(item => item.projectId === task.projectId)
+      : taskRows).filter(item => !item.completed);
+    const index = pending.findIndex(item => item.id === task.id);
+    const sortable = !task.completed && (task.projectId || (!compact && data.taskSort !== "date"));
+    const ids = pending.map(item => item.id);
+    const clearDrag = () => {
+      draggedTask.current = "";
+      setTaskDropTarget(null);
+    };
+    return {
+      task, compact, currentDay,
+      project: data.projects.find(item => item.id === task.projectId),
+      onToggle: toggleTask,
+      onEdit: item => setDialog({ type: "task", item }),
+      onDelete: (id, label) => deleteItem("task", id, label),
+      reorder: sortable ? {
+        rank: index + 1,
+        first: index === 0,
+        last: index === pending.length - 1,
+        dropPosition: taskDropTarget?.id === task.id ? (taskDropTarget.after ? "drop-after" : "drop-before") : "",
+        onMove: direction => {
+          const neighbor = pending[index + direction];
+          if (!neighbor) return;
+          reorderTasks(task.id, neighbor.id, direction > 0, ids);
+          showNotice(`已${direction > 0 ? "下移" : "上移"}任务`);
+        },
+        onDragStart: event => {
+          draggedTask.current = task.id;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", task.id);
+          event.dataTransfer.setDragImage(event.currentTarget.closest(".task-row"), 30, 20);
+        },
+        onDragOver: event => {
+          if (!ids.includes(draggedTask.current) || draggedTask.current === task.id) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          const bounds = event.currentTarget.getBoundingClientRect();
+          const after = event.clientY >= bounds.top + bounds.height / 2;
+          setTaskDropTarget(current => current?.id === task.id && current.after === after ? current : { id: task.id, after });
+        },
+        onDragLeave: event => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setTaskDropTarget(null);
+        },
+        onDrop: event => {
+          if (!ids.includes(draggedTask.current)) return;
+          event.preventDefault();
+          const bounds = event.currentTarget.getBoundingClientRect();
+          reorderTasks(draggedTask.current, task.id, event.clientY >= bounds.top + bounds.height / 2, ids);
+          clearDrag();
+          showNotice("已更新任务优先顺序");
+        },
+        onDragEnd: clearDrag,
+      } : null,
+    };
   }
 
   function setHeatmapColor(color) {
@@ -1066,6 +1291,8 @@ export default function App() {
         ...emptyData,
         ...next,
         heatmapColor: normalizeHeatmapColor(next.heatmapColor),
+        taskActivity: normalizeProjectActivity(next.taskActivity),
+        taskSort: next.taskSort === "date" ? "date" : "priority",
         quickNote: typeof next.quickNote === "string" ? next.quickNote : "",
         tasks: next.tasks.map((task) => ({
           ...task,
@@ -1084,84 +1311,6 @@ export default function App() {
     }
   }
 
-  function TaskRow({ task, compact = false }) {
-    const project = data.projects.find((item) => item.id === task.projectId);
-    const taskLabel = task.projectId ? "子任务" : "任务";
-    const deadline = dateCountdown(
-      task.deadline,
-      currentDay,
-      task.completed,
-      "截止",
-    );
-    const expected = dateCountdown(
-      task.expectedAt?.slice(0, 10),
-      currentDay,
-      task.completed,
-      "预计",
-    );
-    return (
-      <div
-        className={`task-row ${task.completed ? "is-done" : ""} ${compact ? "compact" : ""}`}
-      >
-        <button
-          className="task-check"
-          aria-label={task.completed ? "标记为未完成" : "标记为完成"}
-          onClick={() => toggleTask(task.id)}
-        >
-          {task.completed && <Check size={13} strokeWidth={2.7} />}
-        </button>
-        <div className="task-content">
-          <strong>{task.title}</strong>
-          <div className="row-meta">
-            {deadline && (
-              <span className={`deadline-badge ${deadline.state}`}>
-                {deadline.text}
-              </span>
-            )}
-            {expected && (
-              <span className={`expected-badge ${expected.state}`}>
-                {expected.text}
-                {task.expectedAt?.slice(11) && ` ${task.expectedAt.slice(11)}`}
-              </span>
-            )}
-            {!compact && project && (
-              <span className="project-tag">{project.name}</span>
-            )}
-            {!compact && task.details && (
-              <span className="muted-ellipsis">{task.details}</span>
-            )}
-          </div>
-          {!compact && task.note && (
-            <button
-              className="task-note-preview"
-              onClick={() => setDialog({ type: "task", item: task })}
-              title="打开任务笔记"
-            >
-              <NotebookPen size={12} />
-              <span>{task.note}</span>
-            </button>
-          )}
-        </div>
-        <div className="row-actions">
-          <IconButton
-            icon={NotebookPen}
-            label={task.note ? "编辑任务笔记" : "添加任务笔记"}
-            onClick={() => setDialog({ type: "task", item: task })}
-          />
-          <IconButton
-            icon={Pencil}
-            label={`编辑${taskLabel}`}
-            onClick={() => setDialog({ type: "task", item: task })}
-          />
-          <IconButton
-            icon={Trash2}
-            label={`删除${taskLabel}`}
-            onClick={() => deleteItem("task", task.id, taskLabel)}
-          />
-        </div>
-      </div>
-    );
-  }
 
   if (loadError)
     return (
@@ -1607,7 +1756,7 @@ export default function App() {
                     </div>
                     {dayTasks.length ? (
                       dayTasks.map((task) => (
-                        <TaskRow key={task.id} task={task} compact />
+                        <TaskRow key={task.id} {...taskRowProps(task, true)} />
                       ))
                     ) : (
                       <p className="day-empty">今天还没有任务</p>
@@ -1662,7 +1811,7 @@ export default function App() {
                   <p className="eyebrow">GET THINGS DONE</p>
                   <h1>任务清单</h1>
                   <p className="page-subtitle">
-                    这里只显示我的任务；项目子任务在项目中单独管理。
+                    把重要的事排在前面，每一小步都留下记录。
                   </p>
                 </div>
                 <button
@@ -1675,6 +1824,10 @@ export default function App() {
               </div>
               <ContributionHeatmap
                 tasks={personalTasks}
+                manualRecords={[{ activity: data.taskActivity }]}
+                onRecordProgress={() => recordLearningProgress(1)}
+                onUndoProgress={() => recordLearningProgress(-1)}
+                progressCount={data.taskActivity[currentDay] || 0}
                 today={currentDay}
                 title="我的任务完成记录"
                 ariaLabel="我的任务完成热力图"
@@ -1703,6 +1856,13 @@ export default function App() {
                   ))}
                 </div>
                 <div className="toolbar-right">
+                  <label className="task-sort-control">
+                    <span>排序</span>
+                    <select aria-label="任务排序" value={data.taskSort} onChange={event => setData(current => ({ ...current, taskSort: event.target.value }))}>
+                      <option value="priority">优先顺序</option>
+                      <option value="date">预计日期</option>
+                    </select>
+                  </label>
                   <label className="search-field">
                     <Search size={16} />
                     <input
@@ -1721,13 +1881,15 @@ export default function App() {
                       <header className="task-group-head">
                         <div>
                           <h2>
-                            {group.expectedDate
+                            {data.taskSort !== "date" ? "优先顺序" : group.expectedDate
                               ? `预计 ${group.expectedDate} 完成`
                               : "未设预计完成时间"}
                           </h2>
                           <span>{group.tasks.length} 项</span>
                         </div>
-                        {group.expectedDate && (
+                        {data.taskSort !== "date" ? (
+                          <span className="priority-hint">拖动手柄排序 · 越靠前越优先</span>
+                        ) : group.expectedDate && (
                           <span
                             className={`expected-badge ${
                               dateCountdown(
@@ -1750,7 +1912,7 @@ export default function App() {
                         )}
                       </header>
                       {group.tasks.map((task) => (
-                        <TaskRow key={task.id} task={task} />
+                        <TaskRow key={task.id} {...taskRowProps(task)} />
                       ))}
                     </section>
                   ))
@@ -1764,7 +1926,7 @@ export default function App() {
                     }
                     detail={
                       completionDateFilter
-                        ? `${completionDateFilter} 没有符合当前筛选条件的已完成任务。`
+                        ? `${completionDateFilter} 学习进展 ${data.taskActivity[completionDateFilter] || 0} 次，没有符合筛选条件的已完成任务。`
                         : personalTasks.length
                           ? "试试切换筛选条件或搜索词。"
                           : "把一件要做的事写下来，日程就有了起点。"
@@ -1896,7 +2058,7 @@ export default function App() {
                                 {tasks.length > 0 && (
                                   <div className="subtask-list" aria-label={`${project.name} 子任务`}>
                                     {tasks.map((task) => (
-                                      <TaskRow key={task.id} task={task} compact />
+                                      <TaskRow key={task.id} {...taskRowProps(task, true)} />
                                     ))}
                                   </div>
                                 )}

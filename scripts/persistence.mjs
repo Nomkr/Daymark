@@ -264,6 +264,7 @@ try {
 
   await page.locator(".main-nav .nav-item").filter({ hasText: "任务" }).click();
   await page.getByRole("heading", { name: "任务清单" }).waitFor();
+  await page.getByLabel("任务排序").selectOption("date");
   await page.getByRole("button", { name: "添加任务", exact: true }).click();
   await page.getByRole("textbox", { name: "标题" }).fill("新功能验证任务");
   await page.getByLabel("截止日期").fill(today);

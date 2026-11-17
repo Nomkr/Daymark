@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile, rename, copyFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const CURRENT_DATA_VERSION = 1;
@@ -47,6 +48,21 @@ async function loadData(dataFile, backupFile) {
   return emptyData;
 }
 
+async function replaceDataFile(tempFile, dataFile) {
+  // Windows readers and antivirus scanners can briefly lock the destination.
+  // Keep the old file intact and retry the atomic replacement in the write queue.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(tempFile, dataFile);
+      return;
+    } catch (error) {
+      if (process.platform !== "win32" || attempt >= 5 ||
+          !["EPERM", "EACCES", "EBUSY"].includes(error.code)) throw error;
+      await delay(40 * 2 ** attempt);
+    }
+  }
+}
+
 export async function startServer({
   port = Number(process.env.PORT || 5173),
   dataDir = process.env.DAYMARK_DATA_DIR
@@ -86,7 +102,7 @@ export async function startServer({
         );
         await writeFile(tempFile, JSON.stringify(nextData, null, 2), "utf8");
         if (existsSync(dataFile)) await copyFile(dataFile, backupFile);
-        await rename(tempFile, dataFile);
+        await replaceDataFile(tempFile, dataFile);
       });
     writeQueue
       .then(() => res.json({ ok: true }))

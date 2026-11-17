@@ -1,7 +1,7 @@
 {
   "name": "daymark",
   "private": false,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "productName": "Daymark",
   "description": "本地优先的个人日程与项目工作台",
   "author": "Daymark contributors",
@@ -18,7 +18,8 @@
     "test:persistence": "node scripts/persistence.mjs",
     "test:desktop": "node scripts/desktop-smoke.mjs",
     "test:folders": "node scripts/project-folders-smoke.mjs",
-    "test": "npm run build && npm run test:persistence && npm run test:desktop && npm run test:folders"
+    "test": "npm run build && npm run test:persistence && npm run test:progress && npm run test:desktop && npm run test:folders",
+    "test:progress": "node scripts/task-progress-smoke.mjs"
   },
   "dependencies": {
     "express": "^5.1.0"
